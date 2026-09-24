@@ -1,0 +1,39 @@
+flowchart LR
+    dev["Developers (~100)<br/>CLI / IDE / internal apps"] -->|HTTPS + X-API-Key / SSO| api
+
+    subgraph platform["Knowledge Platform (FastAPI)"]
+        api["API layer<br/>/v1/documents · /v1/query · /v1/llm/chat<br/>auth · validation · error envelope · request IDs"]
+        search["Search service<br/>embed query → vector + BM25 → RRF → rerank"]
+        gw["AI Gateway<br/>allow-list · rate limit · retries · fallbacks · usage log"]
+        worker["Ingestion workers<br/>(DB-backed queue, leases, retries)"]
+        api --> search
+        api --> gw
+        api -. "enqueue (row status=queued)" .-> worker
+        search -. "generate_answer" .-> gw
+    end
+
+    subgraph models["Local ML models (CPU)"]
+        emb["Embedder<br/>BAAI/bge-small-en-v1.5 (384-d)"]
+        rr["Reranker<br/>cross-encoder"]
+        ocr["OCR<br/>RapidOCR (PP-OCR, ONNX)"]
+    end
+
+    subgraph storage["Storage"]
+        db[("Relational DB<br/>SQLite (dev) / Postgres (prod)<br/>documents · chunks · embeddings registry<br/>query_logs · llm_usage · FTS5 keyword index")]
+        vdb[("Vector store<br/>Chroma HNSW (dev) / pgvector (prod)")]
+        blob[("File storage<br/>local disk (dev) / S3 (prod)")]
+    end
+
+    worker --> ocr
+    worker --> emb
+    worker --> vdb
+    worker --> db
+    worker --> blob
+    search --> emb
+    search --> rr
+    search --> vdb
+    search --> db
+    api --> db
+    api --> blob
+    gw --> llm["Anthropic Claude API<br/>(claude-opus-5)"]
+    gw --> db

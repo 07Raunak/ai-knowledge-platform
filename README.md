@@ -21,16 +21,9 @@ truth with a derived vector index.
 
 ## Architecture at a glance
 
-```mermaid
-flowchart LR
-    dev[Developers] --> api["FastAPI<br/>/v1/documents · /v1/query · /v1/llm/chat"]
-    api -- "202 + queued row" --> w["Ingestion workers<br/>extract/OCR → chunk → embed"]
-    w --> db[("SQLite / Postgres<br/>source of truth + BM25")]
-    w --> v[("Chroma / pgvector<br/>HNSW vectors")]
-    api --> s["Search: vector + BM25 → RRF → cross-encoder rerank"]
-    s --> db & v
-    api --> gw["AI Gateway<br/>rate limit · usage log · retries"] --> claude["Claude API"]
-```
+![System overview](docs/diagrams/overview.png)
+
+<sub>Diagram source: [overview.mmd](docs/diagrams/overview.mmd) (Mermaid)</sub>
 
 ## How each requirement is met
 

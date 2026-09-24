@@ -8,93 +8,9 @@ transactional store.
 
 ## ER diagram
 
-```mermaid
-erDiagram
-    documents ||--o{ document_tags : has
-    documents ||--o{ chunks : "split into"
-    chunks ||--o{ embeddings : "embedded as"
-    query_logs }o..o{ chunks : "result_chunk_ids (JSON)"
+![ER diagram](diagrams/er_diagram.png)
 
-    documents {
-        varchar36 id PK
-        varchar filename
-        varchar file_type "pdf|markdown|text|code"
-        varchar language "python, go, ... (code)"
-        varchar mime_type
-        int size_bytes
-        char64 sha256 "dedup key"
-        varchar storage_path "blob key"
-        json metadata "free-form, flat"
-        varchar uploaded_by
-        varchar status "queued|processing|ready|failed|deleted"
-        text error
-        int attempts
-        int purge_attempts
-        timestamptz next_attempt_at "retry backoff"
-        timestamptz locked_until "worker lease"
-        int chunk_count
-        int page_count
-        varchar embedding_model
-        timestamptz created_at
-        timestamptz updated_at
-        timestamptz processed_at
-        timestamptz deleted_at "soft delete"
-    }
-    document_tags {
-        varchar36 document_id PK,FK
-        varchar tag PK
-    }
-    chunks {
-        varchar36 id PK "uuid5(document_id, index)"
-        varchar36 document_id FK
-        int chunk_index
-        text content
-        int token_count
-        varchar chunk_type "text|markdown|code"
-        varchar section "heading path / code symbol"
-        int page_start
-        int page_end
-        int start_line
-        int end_line
-        json metadata "symbol_kind, ocr, ..."
-        timestamptz created_at
-    }
-    embeddings {
-        varchar36 chunk_id PK,FK
-        varchar model PK
-        int dimension
-        varchar vector_collection
-        timestamptz created_at
-    }
-    query_logs {
-        int id PK
-        varchar36 query_id UK
-        varchar user_id
-        text query_text
-        json filters
-        int top_k
-        int result_count
-        json result_chunk_ids
-        float top_score
-        float latency_ms
-        bool cache_hit
-        bool reranked
-        bool answer_generated
-        timestamptz created_at
-    }
-    llm_usage {
-        int id PK
-        varchar user_id
-        varchar purpose "chat|rag_answer"
-        varchar model
-        varchar status "ok|error|refused"
-        int input_tokens
-        int output_tokens
-        float latency_ms
-        text error
-        timestamptz created_at
-    }
-```
+<sub>Diagram source: [er_diagram.mmd](diagrams/er_diagram.mmd) (Mermaid)</sub>
 
 Source: [app/db/models.py](../app/db/models.py). The keyword index is an FTS5 virtual
 table `chunks_fts(content, chunk_id, document_id)` using the `porter unicode61` tokenizer.

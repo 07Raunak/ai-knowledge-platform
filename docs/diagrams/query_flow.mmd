@@ -1,0 +1,12 @@
+flowchart LR
+    q[query + filters] --> f["resolve filters in SQL<br/>(tags, metadata, type, language, dates)<br/>→ allowed document IDs"]
+    f --> e["embed query<br/>(bge query prefix, LRU cached)"]
+    e --> v["vector top-N<br/>(HNSW cosine, doc-ID pre-filter)"]
+    f --> k["BM25 top-N<br/>(FTS5, doc-ID pre-filter)"]
+    v --> r["Reciprocal Rank Fusion"]
+    k --> r
+    r --> h["hydrate from SQL<br/>drop non-ready / deleted"]
+    h --> x["cross-encoder rerank top-M"]
+    x --> t["top-K results<br/>+ score breakdown"]
+    t -. generate_answer .-> g["AI Gateway → Claude<br/>grounded answer with [n] citations"]
+    t --> l[(query_logs)]

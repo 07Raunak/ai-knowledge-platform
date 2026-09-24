@@ -1,0 +1,24 @@
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant A as API
+    participant S as File storage
+    participant D as DB
+    participant W as Worker
+    participant V as Vector store
+
+    C->>A: multipart upload (file, tags, metadata)
+    A->>A: validate type / size / magic bytes, sha256
+    A->>D: duplicate by sha256? → 200 + existing doc
+    A->>S: put raw file
+    A->>D: INSERT documents(status=queued)
+    A-->>C: 202 Accepted + Location: /v1/documents/{id}
+    A--)W: notify (wake-up signal)
+    W->>D: claim job (compare-and-set UPDATE, lease=10 min)
+    W->>S: read file
+    W->>W: extract (text layer or OCR) → chunk (AST / heading / recursive)
+    W->>W: embed chunks (batched)
+    W->>V: upsert vectors (deterministic chunk IDs)
+    W->>D: ONE txn: chunks + embeddings + FTS rows + status=ready
+    C->>A: GET /v1/documents/{id}
+    A-->>C: status=ready, chunk_count, page_count

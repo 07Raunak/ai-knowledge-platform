@@ -2,47 +2,9 @@
 
 ## 1. High-level view
 
-```mermaid
-flowchart LR
-    dev["Developers (~100)<br/>CLI / IDE / internal apps"] -->|HTTPS + X-API-Key / SSO| api
+![High-level architecture](diagrams/architecture.png)
 
-    subgraph platform["Knowledge Platform (FastAPI)"]
-        api["API layer<br/>/v1/documents · /v1/query · /v1/llm/chat<br/>auth · validation · error envelope · request IDs"]
-        search["Search service<br/>embed query → vector + BM25 → RRF → rerank"]
-        gw["AI Gateway<br/>allow-list · rate limit · retries · fallbacks · usage log"]
-        worker["Ingestion workers<br/>(DB-backed queue, leases, retries)"]
-        api --> search
-        api --> gw
-        api -. "enqueue (row status=queued)" .-> worker
-        search -. "generate_answer" .-> gw
-    end
-
-    subgraph models["Local ML models (CPU)"]
-        emb["Embedder<br/>BAAI/bge-small-en-v1.5 (384-d)"]
-        rr["Reranker<br/>cross-encoder"]
-        ocr["OCR<br/>RapidOCR (PP-OCR, ONNX)"]
-    end
-
-    subgraph storage["Storage"]
-        db[("Relational DB<br/>SQLite (dev) / Postgres (prod)<br/>documents · chunks · embeddings registry<br/>query_logs · llm_usage · FTS5 keyword index")]
-        vdb[("Vector store<br/>Chroma HNSW (dev) / pgvector (prod)")]
-        blob[("File storage<br/>local disk (dev) / S3 (prod)")]
-    end
-
-    worker --> ocr
-    worker --> emb
-    worker --> vdb
-    worker --> db
-    worker --> blob
-    search --> emb
-    search --> rr
-    search --> vdb
-    search --> db
-    api --> db
-    api --> blob
-    gw --> llm["Anthropic Claude API<br/>(claude-opus-5)"]
-    gw --> db
-```
+<sub>Diagram source: [architecture.mmd](diagrams/architecture.mmd) (Mermaid)</sub>
 
 The relational DB is the **source of truth**. The vector store is a **derived index** that
 can always be rebuilt from `chunks`. This one decision makes deletes, retries and
@@ -50,32 +12,9 @@ embedding-model migrations safe.
 
 ## 2. Ingestion flow (`POST /v1/documents`)
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant C as Client
-    participant A as API
-    participant S as File storage
-    participant D as DB
-    participant W as Worker
-    participant V as Vector store
+![Ingestion flow](diagrams/ingestion_flow.png)
 
-    C->>A: multipart upload (file, tags, metadata)
-    A->>A: validate type / size / magic bytes, sha256
-    A->>D: duplicate by sha256? → 200 + existing doc
-    A->>S: put raw file
-    A->>D: INSERT documents(status=queued)
-    A-->>C: 202 Accepted + Location: /v1/documents/{id}
-    A--)W: notify (wake-up signal)
-    W->>D: claim job (compare-and-set UPDATE, lease=10 min)
-    W->>S: read file
-    W->>W: extract (text layer or OCR) → chunk (AST / heading / recursive)
-    W->>W: embed chunks (batched)
-    W->>V: upsert vectors (deterministic chunk IDs)
-    W->>D: ONE txn: chunks + embeddings + FTS rows + status=ready
-    C->>A: GET /v1/documents/{id}
-    A-->>C: status=ready, chunk_count, page_count
-```
+<sub>Diagram source: [ingestion_flow.mmd](diagrams/ingestion_flow.mmd) (Mermaid)</sub>
 
 Failure handling in the worker:
 
@@ -89,20 +28,9 @@ Failure handling in the worker:
 
 ## 3. Query flow (`POST /v1/query`)
 
-```mermaid
-flowchart LR
-    q[query + filters] --> f["resolve filters in SQL<br/>(tags, metadata, type, language, dates)<br/>→ allowed document IDs"]
-    f --> e["embed query<br/>(bge query prefix, LRU cached)"]
-    e --> v["vector top-N<br/>(HNSW cosine, doc-ID pre-filter)"]
-    f --> k["BM25 top-N<br/>(FTS5, doc-ID pre-filter)"]
-    v --> r["Reciprocal Rank Fusion"]
-    k --> r
-    r --> h["hydrate from SQL<br/>drop non-ready / deleted"]
-    h --> x["cross-encoder rerank top-M"]
-    x --> t["top-K results<br/>+ score breakdown"]
-    t -. generate_answer .-> g["AI Gateway → Claude<br/>grounded answer with [n] citations"]
-    t --> l[(query_logs)]
-```
+![Query flow](diagrams/query_flow.png)
+
+<sub>Diagram source: [query_flow.mmd](diagrams/query_flow.mmd) (Mermaid)</sub>
 
 ## 4. Delete flow (`DELETE /v1/documents/{id}`)
 
